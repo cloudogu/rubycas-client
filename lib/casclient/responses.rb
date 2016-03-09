@@ -7,12 +7,12 @@ module CASClient
       begin
         doc = REXML::Document.new(raw_xml, :raw => :all)
       rescue REXML::ParseException => e
-        raise BadResponseException, 
+        raise BadResponseException,
           "MALFORMED CAS RESPONSE:\n#{raw_xml.inspect}\n\nEXCEPTION:\n#{e}"
       end
 
       unless doc.elements && doc.elements["cas:serviceResponse"]
-        raise BadResponseException, 
+        raise BadResponseException,
           "This does not appear to be a valid CAS response (missing cas:serviceResponse root element)!\nXML DOC:\n#{doc.to_s}"
       end
 
@@ -36,7 +36,7 @@ module CASClient
     end
 
     def parse(raw_text, options)
-      raise BadResponseException, 
+      raise BadResponseException,
         "CAS response is empty/blank." if raw_text.to_s.empty?
       @parse_datetime = Time.now
       if raw_text =~ /^(yes|no)\n(.*?)\n$/m
@@ -65,6 +65,7 @@ module CASClient
         end
 
         @extra_attributes = {}
+        groups = Array.new
         @xml.elements.to_a('//cas:authenticationSuccess/cas:attributes/* | //cas:authenticationSuccess/*[local-name() != \'proxies\' and local-name() != \'proxyGrantingTicket\' and local-name() != \'user\' and local-name() != \'attributes\']').each do |el|
           inner_text = el.cdatas.length > 0 ? el.cdatas.join('') : el.text
           name = el.name
@@ -73,6 +74,10 @@ module CASClient
             inner_text = attrs['value']
           end
           @extra_attributes.merge! name => inner_text
+          if name == "groups"
+            groups << inner_text
+          end
+          @extra_attributes.merge! "allgroups" => groups.to_s
         end
 
         # unserialize extra attributes
@@ -127,7 +132,7 @@ module CASClient
     end
   end
 
-  # Represents a response from the CAS server to a proxy ticket request 
+  # Represents a response from the CAS server to a proxy ticket request
   # (i.e. after requesting a proxy ticket).
   class ProxyResponse
     include XmlResponse
@@ -139,7 +144,7 @@ module CASClient
     end
 
     def parse(raw_text)
-      raise BadResponseException, 
+      raise BadResponseException,
         "CAS response is empty/blank." if raw_text.to_s.empty?
       @parse_datetime = Time.now
 
@@ -166,7 +171,7 @@ module CASClient
     end
   end
 
-  # Represents a response from the CAS server to a login request 
+  # Represents a response from the CAS server to a login request
   # (i.e. after submitting a username/password).
   class LoginResponse
     attr_reader :tgt, :ticket, :service_redirect_url
@@ -180,8 +185,8 @@ module CASClient
       header = http_response.to_hash
 
       # FIXME: this regexp might be incorrect...
-      if header['set-cookie'] && 
-        header['set-cookie'].first && 
+      if header['set-cookie'] &&
+        header['set-cookie'].first &&
         header['set-cookie'].first =~ /tgt=([^&]+);/
         @tgt = $~[1]
       end
@@ -190,14 +195,14 @@ module CASClient
       if location =~ /ticket=([^&]+)/
         @ticket = $~[1]
       end
-      
+
       # Legacy check. CAS Server used to return a 200 (Success) or a 302 (Found) on successful authentication.
       # This behavior should be deprecated at some point in the future.
       legacy_valid_ticket = (http_response.kind_of?(Net::HTTPSuccess) || http_response.kind_of?(Net::HTTPFound)) && @ticket.present?
-      
+
       # If using rubycas-server 1.1.0+
       valid_ticket = http_response.kind_of?(Net::HTTPSeeOther) && @ticket.present?
-      
+
       if !legacy_valid_ticket && !valid_ticket
         @failure = true
         # Try to extract the error message -- this only works with RubyCAS-Server.
